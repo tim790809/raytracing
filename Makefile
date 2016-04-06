@@ -4,9 +4,9 @@ all: $(EXEC)
 
 CC ?= gcc
 CFLAGS = \
-	-std=gnu99 -Wall -O0 -g
+	-std=gnu99 -Wall -O0 -g -DNDEBUG -pthread
 LDFLAGS = \
-	-lm
+	-lm -pthread
 
 ifeq ($(strip $(PROFILE)),1)
 PROF_FLAGS = -pg
@@ -37,6 +37,9 @@ use-models.h: models.inc Makefile
 	        -e 's/^rectangular /append_rectangular/g' \
 	        -e 's/rectangular[0-9]/(\&&, \&rectangulars);/g' \
 	        -e 's/ = {//g' >> use-models.h
+
+astyle:
+	astyle --style=kr --indent=spaces=4 --indent-switches --suffix=none *.[ch]
 
 clean:
 	$(RM) $(EXEC) $(OBJS) use-models.h \

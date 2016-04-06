@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
 
 #include "math-toolkit.h"
 #include "primitives.h"
@@ -10,6 +11,8 @@
 #define MAX_DISTANCE 1000000000000.0
 #define MIN_DISTANCE 0.00001
 #define SAMPLES 4
+
+#define PSIZE 4 
 
 #define SQUARE(x) (x * x)
 #define MAX(a, b) (a > b ? a : b)
@@ -453,21 +456,28 @@ static unsigned int ray_color(const point3 e, double t,
 }
 
 /* @param background_color this is not ambient light */
-void raytracing(uint8_t *pixels, color background_color,
-                rectangular_node rectangulars, sphere_node spheres,
-                light_node lights, const viewpoint *view,
-                int width, int height)
+void *thread_ray(void* argument)
 {
+    static int rj = PSIZE;
+    static int tk  = 0;
+    int start;
+
+    pthread_mutex_lock(&m);
+    start = tk++;
+    pthread_mutex_unlock(&m);
+
     point3 u, v, w, d;
     color object_color = { 0.0, 0.0, 0.0 };
 
+    struct thread_args *args = argument;
     /* calculate u, v, w */
     calculateBasisVectors(u, v, w, view);
 
     idx_stack stk;
 
     int factor = sqrt(SAMPLES);
-    for (int j = 0; j < height; j++) {
+
+    for (int j = start; j < args->height; ) {
         for (int i = 0; i < width; i++) {
             double r = 0, g = 0, b = 0;
             /* MSAA */
@@ -476,23 +486,69 @@ void raytracing(uint8_t *pixels, color background_color,
                 rayConstruction(d, u, v, w,
                                 i * factor + s / factor,
                                 j * factor + s % factor,
-                                view,
-                                width * factor, height * factor);
-                if (ray_color(view->vrp, 0.0, d, &stk, rectangulars, spheres,
-                              lights, object_color,
+                                args->view,
+                                args->width * factor, args->height * factor);
+                if (ray_color(args->view->vrp, 0.0, d, &stk, args->rectangulars, args->spheres, args->lights, object_color,
                               MAX_REFLECTION_BOUNCES)) {
                     r += object_color[0];
                     g += object_color[1];
                     b += object_color[2];
                 } else {
-                    r += background_color[0];
-                    g += background_color[1];
-                    b += background_color[2];
+                    r += (*args->background_color)[0];
+                    g += (*args->background_color)[1];
+                    b += (*args->background_color)[2];
                 }
-                pixels[((i + (j * width)) * 3) + 0] = r * 255 / SAMPLES;
-                pixels[((i + (j * width)) * 3) + 1] = g * 255 / SAMPLES;
-                pixels[((i + (j * width)) * 3) + 2] = b * 255 / SAMPLES;
+                args->pixels[((i + (j * args->width)) * 3) + 0] = r * 255 / SAMPLES;
+                args->pixels[((i + (j * args->width)) * 3) + 1] = g * 255 / SAMPLES;
+                args->pixels[((i + (j * args->width)) * 3) + 2] = b * 255 / SAMPLES;
             }
+ 
         }
+       	pthread_mutex_lock(&m);
+        j = ++rj;
+       	pthread_mutex_unlock(&m);
     }
+    pthread_exit(NULL);
+}
+
+struct thread_args {
+    uint8_t *pixels;
+    light_node lights;
+    rectangular_node rectangulars;
+    sphere_node spheres;
+    color *background_color;
+    const viewpoint *view;
+    int width;
+    int height;
+};
+
+pthread_mutex_t m;
+pthread_t p[PSIZE];
+
+void raytracing(uint8_t *pixels, color background_color,
+                rectangular_node rectangulars, sphere_node spheres,
+                light_node lights, const viewpoint *view,
+                int width, int height)
+{
+    
+    struct thread_args argument;
+    //settting pthread argument
+    argument.background_color = (color*)background_color;
+    argument.pixels = pixels;
+    argument.rectangulars = rectangulars;
+    argument.spheres = spheres;
+    argument.lights = lights;
+    argument.view = view;
+    argument.width = width;
+    argument.height = height;
+
+    pthread_mutex_init(&m, NULL);
+
+    for (int i = 0; i < PSIZE; i++) {
+        pthread_create(&p[i], NULL, thread_ray, &argument);
+    }
+    for(int i = 0; i < PSIZE; i++) {
+        pthread_join(p[i], NULL);
+    }
+
 }
