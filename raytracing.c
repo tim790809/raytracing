@@ -456,6 +456,20 @@ static unsigned int ray_color(const point3 e, double t,
 }
 
 /* @param background_color this is not ambient light */
+
+pthread_mutex_t m;
+
+struct thread_args {
+    uint8_t *pixels;
+    light_node lights;
+    rectangular_node rectangulars;
+    sphere_node spheres;
+    color *background_color;
+    const viewpoint *view;
+    int width;
+    int height;
+};
+
 void *thread_ray(void* argument)
 {
     static int rj = PSIZE;
@@ -471,14 +485,14 @@ void *thread_ray(void* argument)
 
     struct thread_args *args = argument;
     /* calculate u, v, w */
-    calculateBasisVectors(u, v, w, view);
+    calculateBasisVectors(u, v, w, args->view);
 
     idx_stack stk;
 
     int factor = sqrt(SAMPLES);
 
     for (int j = start; j < args->height; ) {
-        for (int i = 0; i < width; i++) {
+        for (int i = 0; i < args->width; i++) {
             double r = 0, g = 0, b = 0;
             /* MSAA */
             for (int s = 0; s < SAMPLES; s++) {
@@ -511,18 +525,9 @@ void *thread_ray(void* argument)
     pthread_exit(NULL);
 }
 
-struct thread_args {
-    uint8_t *pixels;
-    light_node lights;
-    rectangular_node rectangulars;
-    sphere_node spheres;
-    color *background_color;
-    const viewpoint *view;
-    int width;
-    int height;
-};
 
-pthread_mutex_t m;
+
+
 pthread_t p[PSIZE];
 
 void raytracing(uint8_t *pixels, color background_color,
